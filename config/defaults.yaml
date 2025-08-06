@@ -6,11 +6,11 @@ defaults:
     - _self_
 
 use_wandb: true
-wandb_project_name: NeMo
+wandb_project_name: dlcv1
 
 seed_number: 0
 training:
     scale_iterations_per_epoch: 1.0
 
 inference:
-    visualize_num_samples: 0
+    visualize_num_samples: 10

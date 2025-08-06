@@ -466,7 +466,8 @@ class NeMo_Rec(OD3D_Method):
         )
         losses = [
             task_metrics.rec_rgb_mse.mean() * 1.0,
-            task_metrics.rec_mask_mse.mean() * 10.0,
+            #edit: 1 was 10
+            task_metrics.rec_mask_mse.mean() * 1,
             -task_metrics.rec_mask_dt_dot.mean() * 100.0,
             loss_geo_sdf_reg.mean() * 0.01,
         ]

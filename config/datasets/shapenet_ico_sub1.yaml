@@ -8,8 +8,8 @@ sequences_count_max_per_category: 1 # None
 
 dict_nested_frames:
   r2n2_v2_icorealtraj100_uni64_theta_uni1:
-#    motorbike:
-#      '3a94134ec9698b74ec5901a85efd6b67':
+    motorbike:
+     '3a94134ec9698b74ec5901a85efd6b67':
     chair:
       '28a60e0e9adf7eb0a3340564b56a7f70':
 

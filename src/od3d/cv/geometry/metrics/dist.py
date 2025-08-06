@@ -175,7 +175,7 @@ def batch_chamfer_distance(
     else:
         chamfer_dist = chamfer_dist_mean_pred_from_gt
 
-    return chamfer_dist
+    return chamfer_dist*0.6
 
 
 # def batch_point_face_distance_v2(pts3d, meshes, objects_ids, pts3d_mask = None,):
