@@ -32,6 +32,7 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
         self,
         verts: List[torch.Tensor],
         faces: List[torch.Tensor],
+
         feat_dim=128,
         objects_count=0,
         feats_objects: Union[bool, torch.Tensor] = False,
@@ -40,6 +41,9 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
         verts_coarse_count: int = 150,
         verts_coarse_prob_sigma: float = 0.01,
         feats_requires_grad=True,
+        ###
+        # vertexoffset_requires_grad=True,
+        ###
         feat_clutter=False,
         feats_distribution=FEATS_DISTR.VON_MISES_FISHER,
         feats_activation=FEATS_ACTIVATION.NORM_DETACH,
@@ -64,10 +68,12 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
         gs_opacity_requires_grad=False,
         gs_scale_requires_grad=False,
         gs_rotation_requires_grad=False,
-        tet_res=16,
+        tet_res=64, #was 16 before
         sdf_symmetric=True,
         harmonic_functions_count=8,
         init_radius=1.0,
+        start_without_sphere=False,
+        start_from_cube=False,
         **kwargs,
     ):
         super().__init__(
@@ -78,6 +84,9 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
             feats_objects=None,
             verts_uvs=verts_uvs,
             feats_requires_grad=feats_requires_grad,
+            ####new
+            # vertexoffset_requires_grad=vertexoffset_requires_grad,
+            ###
             feats_objects_requires_param=False,
             feat_clutter_requires_param=feat_clutter_requires_param,
             feat_clutter=feat_clutter,
@@ -111,10 +120,13 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
 
         self.init_radius = init_radius
         self.mesh_update_jitter_scale = 0.05  # 1. / (tet_res + 1)
-
+        self.vertexoffset_scale = 2.0 / 32.0
+        self.start_without_sphere = start_without_sphere
+        self.start_from_cube = start_from_cube
         self.marching_tets = DMTet_Core()
         self.sdf_coordmlps = torch.nn.ModuleList()
         self.feat_coordmlps = torch.nn.ModuleList()
+        self.vertexoffset_coordmlps = torch.nn.ModuleList()
 
         sdf_coord_mlp_cfg = DictConfig(
             {
@@ -122,7 +134,30 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
                 "hidden_dim": 256,
                 "out_dim": 1,
                 "dropout": 0,
-                "activation": None,  # None
+                "activation": None, 
+                "symmetrize": sdf_symmetric,
+            },
+        )
+
+        # vertexoffset_coord_mlp_cfg = DictConfig(
+        #     {
+        #         "num_layers": 5,
+        #         "hidden_dim": 256,
+        #         "out_dim": 3,  # 3D Offset
+        #         "dropout": 0,
+        #         "offset_scale": self.vertexoffset_scale,
+        #         "activation": "tanh", 
+        #         "symmetrize": False,   
+        #     }
+        # )
+
+        vertexoffset_coord_mlp_cfg = DictConfig(
+            {
+                "num_layers": 5,
+                "hidden_dim": 256,
+                "out_dim": 3,
+                "dropout": 0,
+                "activation": "tanh", 
                 "symmetrize": sdf_symmetric,
             },
         )
@@ -164,12 +199,36 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
                 ).to(device, dtype),
             )
 
+            self.vertexoffset_coordmlps.append(
+                CoordMLP(
+                    in_dims=[0],
+                    in_upsample_scales=[],
+                    config=vertexoffset_coord_mlp_cfg,
+                    n_harmonic_functions=harmonic_functions_count,
+                    embed_concat_pts=True,
+                ).to(device, dtype)
+            )
+            # self.vertexoffset_coordmlps.append(
+            #     VertexOffsetModule(
+            #         #num_verts=torch.zeros_like(self.tets_verts).shape[0], #??
+            #         in_dims=[0],
+            #         in_upsample_scales=[],
+            #         config=vertexoffset_coord_mlp_cfg,
+            #         n_harmonic_functions=harmonic_functions_count,
+            #         embed_concat_pts=True, #??
+            #     ).to(device, dtype) 
+            # )
+
         if not verts_requires_grad:
             for param in self.sdf_coordmlps.parameters():
                 param.requires_grad = False
         if not feats_requires_grad:
             for param in self.feat_coordmlps.parameters():
                 param.requires_grad = False
+        # if not vertexoffset_requires_grad:
+        #     for param in self.vertexoffset_coordmlps.parameters():
+        #         param.requires_grad = False
+        
 
         from pathlib import Path
 
@@ -184,6 +243,11 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
             torch.tensor(tets["vertices"], dtype=dtype, device=device)
         ) * self.tets_scale  # verts original scale (-0.5, 0.5)
         self.tets_faces = torch.tensor(tets["indices"], dtype=torch.long, device=device)
+
+        ###
+        # Per-vertex Offset init
+        #self.vertex_offset = torch.nn.Parameter(torch.zeros_like(self.tets_verts))  # [num_vertices, 3] 3D spatial offset
+        ###
         # self.generate_edges()
         self.update_dmtet(device=device, dtype=dtype, require_grad=False)
 
@@ -191,6 +255,11 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
         self.verts_requires_grad = verts_requires_grad
         for param in self.sdf_coordmlps.parameters():
             param.requires_grad = verts_requires_grad
+
+    def set_vertexoffset_requires_grad(self, vertexoffset_requires_grad):
+        self.vertexoffset_requires_grad = vertexoffset_requires_grad
+        for param in self.vertexoffset_coordmlps.parameters():
+            param.requires_grad = vertexoffset_requires_grad
 
     def to(self, *args, **kwargs):
         super().to(*args, **kwargs)
@@ -218,11 +287,14 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
         dtype=None,
         require_grad=None,
         require_feats_grad=None,
+        require_vertexoffset_grad=None, #does this need to be separate?
     ):
         if require_grad is None:
             require_grad = self.verts_requires_grad
         if require_feats_grad is None:
             require_feats_grad = require_grad
+        if require_vertexoffset_grad is None:
+            require_vertexoffset_grad = require_grad
         # kaolin.non_commercial.FlexiCubes
         # https://kaolin.readthedocs.io/en/latest/modules/kaolin.non_commercial.html#kaolin.non_commercial.FlexiCubes
         verts = []
@@ -235,7 +307,12 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
 
         for m in range(self.meshes_count):
             if require_grad:
-                tets_verts = self.get_uniform_jittered_tets_verts(m)
+                #tets_verts = self.get_uniform_jittered_tets_verts(m) # get without jitter
+                tets_verts = self.tets_verts.clone()  # self.get_uniform_jittered_tets_verts(m)
+                ###
+                offset_mlp = self.get_vertexoffset(tets_verts, m) #* self.vertex_offset_scale
+                tets_verts = tets_verts + offset_mlp
+                ###
                 tets_sdfs = self.get_sdf(pts=tets_verts, object_id=m)
                 _verts, _faces, _uvs, _uv_idx = self.marching_tets(
                     tets_verts,
@@ -250,7 +327,9 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
                             self.tets_verts.clone()
                         )  # self.get_uniform_jittered_tets_verts(m)
                     else:
-                        tets_verts = self.get_uniform_jittered_tets_verts(m)
+                        tets_verts = self.tets_verts.clone() #tets_verts = self.get_uniform_jittered_tets_verts(m)
+                    offset_mlp = self.get_vertexoffset(tets_verts, m) #* self.vertex_offset_scale
+                    tets_verts = tets_verts + offset_mlp
                     tets_sdfs = self.get_sdf(pts=tets_verts, object_id=m)
                     _verts, _faces, _uvs, _uv_idx = self.marching_tets(
                         tets_verts,
@@ -344,7 +423,8 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
 
     def get_uniform_jittered_tets_verts(self, object_id):
         pts = self.tets_verts.clone()  #  self.get_verts_with_mesh_id(object_id)
-        if self.mesh_update_jitter_scale > 0:
+        # For start_without_sphere, disable jitter to keep SDF sampling stable
+        if self.mesh_update_jitter_scale > 0 and not self.start_without_sphere:
             jitter = (
                 (torch.rand(3, device=pts.device) - 0.5)
                 * self.tets_scale
@@ -355,9 +435,9 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
 
     def get_rand_jittered_mesh_verts(self, object_id):
         pts = self.get_verts_with_mesh_id(object_id, clone=True).detach()
-        if self.mesh_update_jitter_scale > 0:
+        if self.mesh_update_jitter_scale > 0 and not self.start_without_sphere:
             jitter = (
-                (torch.rand_like(pts, device=pts.device) - 0.5)
+                (torch.rand_like(pts) - 0.5)
                 * self.tets_scale
                 * self.mesh_update_jitter_scale
             )
@@ -371,21 +451,51 @@ class DMTet_x_Gaussians(Meshes_x_Gaussians):
         Returns:
             sdf (torch.Tensor): BxN
         """
-
-        sdf_init = pts.detach().norm(dim=-1, keepdim=True) - self.init_radius
+        
         from od3d.data.batch_datatypes import OD3D_ModelData
-
         sdf_delta = self.sdf_coordmlps[object_id](
             OD3D_ModelData(pts3d=pts[None,]),
         ).feat[0]
-        sdf_vals = sdf_init + sdf_delta
-        return sdf_vals
+        
+        # For start_without_sphere mode, return zero SDF (no sphere initialization)
+        if self.start_without_sphere:
+            return sdf_delta
+        elif self.start_from_cube:
+            # Cube initialization - SDF of a cube centered at origin
+            abs_pts = pts.detach().abs()
+            cube_sdf = (abs_pts.max(dim=-1, keepdim=True)[0] - self.init_radius)
+            return cube_sdf + sdf_delta
+        else:
+            # Original sphere-based initialization
+            sdf_init = pts.detach().norm(dim=-1, keepdim=True) - self.init_radius
+            sdf_vals = sdf_init + sdf_delta
+            return sdf_vals
 
     def get_feats(self, pts, object_id):
         from od3d.data.batch_datatypes import OD3D_ModelData
 
         feats = self.feat_coordmlps[object_id](OD3D_ModelData(pts3d=pts[None,])).feat[0]
         return feats
+    
+    def get_vertexoffset(self, pts: torch.Tensor, object_id: int) -> torch.Tensor:
+        """
+        Computes learned vertex offsets for given 3D points via CoordMLP.
+
+        Args:
+            pts (torch.Tensor): Tensor of shape (N, 3) with input points.
+            object_id (int): Index of the object to select the right MLP.
+
+        Returns:
+            torch.Tensor: Offsets of shape (N, 3), same shape as input.
+        """
+        from od3d.data.batch_datatypes import OD3D_ModelData
+
+        # Wrap points in OD3D_ModelData
+        input_data = OD3D_ModelData(pts3d=pts[None])  # Shape becomes (1, N, 3) I hope? 
+
+        # Forward through the MLP
+        offsets = self.vertexoffset_coordmlps[object_id](input_data).feat[0]  # Shape (N, 3)
+        return offsets * self.vertexoffset_scale
 
     def get_sdf_gradient(self, object_id):
         num_samples = 5000

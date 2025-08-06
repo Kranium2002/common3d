@@ -8,17 +8,17 @@
 #CUDA_HOME={cfg.platform.path_cuda}
 #PATH_OD3D={cfg.platform.path_od3d}
 
-sudo apt-get update
-sudo apt-get upgrade
-sudo apt-get install python3, python3-dev, python3-venv
+# sudo apt-get update
+# sudo apt-get upgrade
+# sudo apt-get install python3, python3-dev, python3-venv
 
 #sudo add-apt-repository ppa:deadsnakes/ppa
 #sudo apt update
 #sudo apt-get install python3.11, python3.11-venv
 #alias python3=python3.11
 
-sudo apt install nvidia-driver-570 nvidia-dkms-570
-sudo apt install libgtk2.0-dev pkg-config # for cv2
+# sudo apt install nvidia-driver-570 nvidia-dkms-570
+# sudo apt install libgtk2.0-dev pkg-config # for cv2
 
 CUDA_HOME=/usr/local/cuda-12.2
 CUDA_HOME=/usr/local/cuda-12.4
@@ -40,28 +40,28 @@ export CXX=/usr/bin/g++-13 # only required for ubuntu 24
 # echo LD_LIBRARY_PATH=${{LD_LIBRARY_PATH}}
 echo CUDA_HOME=${CUDA_HOME}
 
-git pull
+# git pull
 
-git submodule init
-git submodule update
-git submodule foreach 'git fetch origin; git checkout $(git rev-parse --abbrev-ref HEAD); git reset --hard origin/$(git rev-parse --abbrev-ref HEAD); git submodule update --recursive; git clean -dfx'
-# git submodule update --init --recursive
+# git submodule init
+# git submodule update
+# git submodule foreach 'git fetch origin; git checkout $(git rev-parse --abbrev-ref HEAD); git reset --hard origin/$(git rev-parse --abbrev-ref HEAD); git submodule update --recursive; git clean -dfx'
+# # git submodule update --init --recursive
 
 
-# Install OD3D in venv
-VENV_NAME="venv_od3d_${CUDA_VERSION}"
-export VENV_NAME
-if [[ -d "${VENV_NAME}" ]]; then
-    echo "Venv already exists at ${PATH_OD3D}/${VENV_NAME}."
-    source ${PATH_OD3D}/${VENV_NAME}/bin/activate
-else
-    echo "Creating venv at ${PATH_OD3D}/${VENV_NAME}."
-    python3 -m venv ${PATH_OD3D}/${VENV_NAME}
-    source ${PATH_OD3D}/${VENV_NAME}/bin/activate
-fi
+# # Install OD3D in venv
+# VENV_NAME="venv_od3d_${CUDA_VERSION}"
+# export VENV_NAME
+# if [[ -d "${VENV_NAME}" ]]; then
+#     echo "Venv already exists at ${PATH_OD3D}/${VENV_NAME}."
+#     source ${PATH_OD3D}/${VENV_NAME}/bin/activate
+# else
+#     echo "Creating venv at ${PATH_OD3D}/${VENV_NAME}."
+#     python3 -m venv ${PATH_OD3D}/${VENV_NAME}
+#     source ${PATH_OD3D}/${VENV_NAME}/bin/activate
+# fi
 
-pip install pip --upgrade
-pip install wheel
+# pip install pip --upgrade
+# pip install wheel
 
 if [[ "${CUDA_HOME}" == *"12.4"* ]]; then
     echo "installing for CUDA 12.4"

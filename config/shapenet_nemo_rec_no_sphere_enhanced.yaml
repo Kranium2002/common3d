@@ -1,6 +1,6 @@
 defaults:
   - logger: wandb
-  - methods@method.nemo: nemo_rec
+  - methods@method.nemo: nemo_rec_no_sphere_enhanced
   - methods/dataset@method.nemo: co3d
   - datasets@train_datasets.labeled: shapenet_ico_sub1 # _bic # co3d_no_zsp_50s_aligned
   - datasets@val_datasets.main: shapenet_ico_sub1 # _bic # co3d_no_zsp_50s_aligned
@@ -11,11 +11,9 @@ defaults:
   - platform: local
   - _self_
 
-mesh_type: 'alpha500' # note: this is anyway ignored as we are using dmtet
-
+mesh_type: 'alpha500'
 mesh_type_aligned: 'alpha500'
 aligned_name: 'aligned_N_${mesh_type_aligned}_dinov2s/${co3d_refs.ref_name}'
-# mesh_type_used: 'alphauniform250'
 
 modalities:
     - 'size'
@@ -34,24 +32,8 @@ modalities:
     - 'mesh'
     - 'pcl'
 
-#table_metrics:
-#  test/co3d_no_zsp_5s_labeled_ref/geo,test/co3dv1_zsp_10s/geo,test/co3d_no_zsp_5s_labeled_ref/pose/acc_pi6,test/co3dv1_zsp_10s/pose/acc_pi6
-#  - test/co3d_no_zsp_5s_labeled_ref/pose/acc_pi6
-#  - test/co3dv1_zsp_10s/geo
-#  - test/co3dv1_zsp_10s/pose/acc_pi6
-
 test_subset_fraction: 1.
 val_subset_fraction: 0.1
-
-checkpoint_opt:
-test: True
-train: True
-checkpoint: # ${checkpoint_opt} #  ${platform.path_exps}/__LAST_RUN__/nemo.ckpt # 03-20_15-51-46_CO3D_NeMo_bicycle_slurm # note: not rfpath automatic now /nemo.ckpt
-# checkpoint: ${platform.path_exps}/08-28_15-22-55_CO3D_NeMo_dense_app0_meshes_x_gaussians_cat_def_bic50_slurm/nemo.ckpt
-
-#train: False
-#checkpoint: ${platform.path_exps}/__LAST_RUN__/nemo.ckpt
-
 skip_cross_pascal3d: False
 skip_cross_pascal3d_occ: ${skip_cross_pascal3d} # False
 
@@ -61,50 +43,22 @@ skip_cross_objectnet3d: True
 skip_co3d_zsp_val: True
 skip_co3d_zsp_test: False
 skip_co3d_no_zsp_test: False
-
-train_sequences_count_max_per_category: 50
-
 categories:
-  # - chair
   - motorcycle
-#  - truck
-#  - train
-#  - teddybear
-#  - car
-#  - bus
-#  - motorcycle
-#  - keyboard
-#  - handbag
-#  - remote
-#  - airplane
-#  - toilet
-#  - hairdryer
-#  - mouse
-#  - toaster
-#  - hydrant
-#  - chair
-#  - laptop
-#  - book
-#  - backpack
-#  - cellphone # from cellphone on, no zsp categories
-#  - microwave
-#  - bench
-#  - bottle
-#  - couch
-#  - cup
-#  - suitcase
-#  - tv
 
 metrics:
   - metricA
   - metricB
 
+checkpoint_opt:
+test: True
+train: True
+checkpoint: 
 
 method:
   nemo:
     name: nemo
     class_name: NeMo_Rec
-
     model:
       head:
         normalize: True
@@ -128,7 +82,19 @@ method:
       epochs_to_next_test: 10
       dataloader:
         num_workers: 8
-        batch_size: 11
+        batch_size: 12
+      transform:
+        class_name: SequentialTransform
+        transforms:
+        - class_name: CenterZoom3D
+          W: 512
+          H: 512
+          scale:
+          scale_with_mask: 1.
+          center_rel_shift_xy:
+            - -0.
+            - -0.
+        - class_name: RGB_UInt8ToFloat
     test:
       dataloader:
         num_workers: 8
@@ -145,7 +111,6 @@ method:
             - -0.
             - -0.
         - class_name: RGB_UInt8ToFloat
-
     categories: ${categories}
     path_meshes_tform: ${train_datasets.labeled.path_preprocess}/tform_obj/label3d_cuboid/meta_mask/meta
     path_meshes: ${train_datasets.labeled.path_preprocess}/mesh/${mesh_type}/meta_mask/meta
@@ -208,6 +173,7 @@ method:
       cup: None # ${..path_meshes_tform}/cup/${co3d_refs.cup}/tform_obj.pt
       suitcase: None # ${..path_meshes_tform}/suitcase/${co3d_refs.suitcase}/tform_obj.pt
       tv: None # ${..path_meshes_tform}/tv/${co3d_refs.tv}/tform_obj.pt
+
 
 train_datasets:
   labeled:
