@@ -136,6 +136,8 @@ dmypy.json
 data/
 exp/
 wandb/
+outputs/
+home/tmp/
 
 # temporary thought support file
 ts.txt
